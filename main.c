@@ -63,6 +63,17 @@ u32* Z_envZ_g_reserved14(struct Z_env_instance_t* i) { return &dummyGlobal; }
 u32* Z_envZ_g_reserved15(struct Z_env_instance_t* i) { return &dummyGlobal; }
 wasm_rt_memory_t* Z_envZ_memory(struct Z_env_instance_t* i) { return i->Z_envZ_memory; }
 
+const uint32_t uw8buttonScanCodes[] = {
+  SDL_SCANCODE_UP,
+  SDL_SCANCODE_DOWN,
+  SDL_SCANCODE_LEFT,
+  SDL_SCANCODE_RIGHT,
+  SDL_SCANCODE_Z,
+  SDL_SCANCODE_X,
+  SDL_SCANCODE_A,
+  SDL_SCANCODE_S
+};
+
 int main() {
   wasm_rt_init();
 
@@ -85,7 +96,9 @@ int main() {
 
   uint32_t* pixels32 = malloc(320*240*4);
 
-  for(uint32_t time = 0;; time += 16) {
+  uint32_t startTime = SDL_GetTicks();
+
+  for( ;; ) {
     SDL_Event event;
     while(SDL_PollEvent(&event)) {
       switch(event.type) {
@@ -94,7 +107,19 @@ int main() {
       }
     }
 
+    uint32_t time = SDL_GetTicks() - startTime;
+
     *(uint32_t*)(mainMemory.data + 64) = time;
+
+    int numKeys;
+    const Uint8* keyState = SDL_GetKeyboardState(&numKeys);
+    uint8_t buttons = 0;
+    for(int i = 0; i < 8; ++i) {
+      if(keyState[uw8buttonScanCodes[i]]) {
+        buttons |= 1 << i;
+      }
+    }
+    mainMemory.data[0x44] = buttons;
     
     Z_cartZ_upd(&cartInstance);
 
@@ -107,6 +132,13 @@ int main() {
     SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, texture, NULL, NULL);
     SDL_RenderPresent(renderer);
+
+    uint32_t frame = (uint32_t)((uint64_t)time * 60 / 1000);
+    uint32_t nextFrameTime = (uint32_t)((uint64_t)(frame + 1) * 1000 / 60 + 4);
+    uint32_t delay = startTime + nextFrameTime - SDL_GetTicks();
+    if(delay < 17) {
+      SDL_Delay(delay);
+    }
   }
 
   return 0;
