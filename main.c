@@ -136,7 +136,7 @@ int main() {
     uint32_t frame = (uint32_t)((uint64_t)time * 60 / 1000);
     uint32_t nextFrameTime = (uint32_t)((uint64_t)(frame + 1) * 1000 / 60 + 4);
     uint32_t delay = startTime + nextFrameTime - SDL_GetTicks();
-    if(delay < 17) {
+    if(delay < 33) {
       SDL_Delay(delay);
     }
   }
