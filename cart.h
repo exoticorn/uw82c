@@ -80,6 +80,11 @@ typedef struct Z_cart_instance_t {
   u32 *Z_envZ_g_reserved9;
   /* import: 'env' 'memory' */
   wasm_rt_memory_t *Z_envZ_memory;
+  u32 w2c_g16;
+  f32 w2c_g17;
+  f32 w2c_g18;
+  f32 w2c_g19;
+  f32 w2c_g20;
 } Z_cart_instance_t;
 
 void Z_cart_init_module(void);
