@@ -55,23 +55,8 @@ void audioCallback(void* userdata, Uint8* stream, int len) {
 
 int main() {
   wasm_rt_init();
-  wasm_rt_memory_t memory;
-  wasm_rt_allocate_memory(&memory, 4, 4);
-  Z_env_instance_t platformInstance;
-  platformInstance.Z_envZ_memory = &memory;
   Z_env_init_module();
-  Z_env_instantiate(&platformInstance, &platformInstance);
-  Z_cart_instance_t cartInstance;
   Z_cart_init_module();
-  Z_cart_instantiate(&cartInstance, &platformInstance);
-
-  AudioState audioState;
-  wasm_rt_allocate_memory(&audioState.memory, 4, 4);
-  audioState.platformInstance.Z_envZ_memory = &audioState.memory;
-  Z_env_instantiate(&audioState.platformInstance, &audioState.platformInstance);
-  Z_cart_instantiate(&audioState.cartInstance, &audioState.platformInstance);
-  memcpy(audioState.registers, memory.data + 0x50, 32);
-  audioState.sampleIndex = 0;
 
   SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
   SDL_Window* window;
@@ -82,60 +67,94 @@ int main() {
 
   uint32_t* pixels32 = malloc(320*240*4);
 
-  SDL_AudioSpec audioSpec;
-  audioSpec.freq = 44100;
-  audioSpec.format = AUDIO_F32SYS;
-  audioSpec.channels = 2;
-  audioSpec.samples = 256;
-  audioSpec.callback = audioCallback;
-  audioSpec.userdata = &audioState;
-  SDL_AudioDeviceID audioDevice = SDL_OpenAudioDevice(NULL, 0, &audioSpec, &audioSpec, 0);
-  SDL_PauseAudioDevice(audioDevice, 0);
+  bool quit = false;
+  while(!quit) {
+    wasm_rt_memory_t memory;
+    wasm_rt_allocate_memory(&memory, 4, 4);
+    Z_env_instance_t platformInstance;
+    platformInstance.Z_envZ_memory = &memory;
+    Z_env_instantiate(&platformInstance, &platformInstance);
+    Z_cart_instance_t cartInstance;
+    Z_cart_instantiate(&cartInstance, &platformInstance);
 
-  uint32_t startTime = SDL_GetTicks();
-
-  for( ;; ) {
-    SDL_Event event;
-    while(SDL_PollEvent(&event)) {
-      switch(event.type) {
-      case SDL_QUIT:
-        exit(0);
-      }
-    }
-
-    uint32_t time = SDL_GetTicks() - startTime;
-    *(uint32_t*)(memory.data + 64) = time;
-
-    int numKeys;
-    const Uint8* keyState = SDL_GetKeyboardState(&numKeys);
-    uint8_t buttons = 0;
-    for(int i = 0; i < 8; ++i) {
-      if(keyState[uw8buttonScanCodes[i]]) {
-        buttons |= 1 << i;
-      }
-    }
-    memory.data[0x44] = buttons;
-    
-    Z_cartZ_upd(&cartInstance);
+    AudioState audioState;
+    wasm_rt_allocate_memory(&audioState.memory, 4, 4);
+    audioState.platformInstance.Z_envZ_memory = &audioState.memory;
+    Z_env_instantiate(&audioState.platformInstance, &audioState.platformInstance);
+    Z_cart_instantiate(&audioState.cartInstance, &audioState.platformInstance);
     memcpy(audioState.registers, memory.data + 0x50, 32);
+    audioState.sampleIndex = 0;
 
-    uint32_t* palette = (uint32_t*)(memory.data + 0x13000);
-    uint8_t* pixels = memory.data + 120;
-    for(uint32_t i = 0; i < 320*240; ++i) {
-      pixels32[i] = palette[pixels[i]];
-    }
-    SDL_UpdateTexture(texture, NULL, pixels32, 320*4);
-    SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
-    SDL_RenderPresent(renderer);
+    SDL_AudioSpec audioSpec;
+    audioSpec.freq = 44100;
+    audioSpec.format = AUDIO_F32SYS;
+    audioSpec.channels = 2;
+    audioSpec.samples = 256;
+    audioSpec.callback = audioCallback;
+    audioSpec.userdata = &audioState;
+    SDL_AudioDeviceID audioDevice = SDL_OpenAudioDevice(NULL, 0, &audioSpec, &audioSpec, 0);
+    SDL_PauseAudioDevice(audioDevice, 0);
 
-    uint32_t frame = (uint32_t)((uint64_t)time * 60 / 1000);
-    uint32_t offset = time - (uint32_t)((uint64_t)frame * 1000 / 60);
-    uint32_t nextFrameTime = (uint32_t)((uint64_t)(frame + 1) * 1000 / 60 + (offset < 4 ? offset : 4));
-    uint32_t delay = startTime + nextFrameTime - SDL_GetTicks();
-    if(delay < 33) {
-      SDL_Delay(delay);
+    uint32_t startTime = SDL_GetTicks();
+
+  bool restart = false;
+    while(!quit && !restart) {
+      SDL_Event event;
+      while(SDL_PollEvent(&event)) {
+        switch(event.type) {
+          case SDL_QUIT:
+            quit = true;
+            break;
+          case SDL_KEYDOWN:
+            switch(event.key.keysym.sym) {
+              case SDLK_ESCAPE:
+                quit = true;
+                break;
+              case SDLK_r:
+                restart = true;
+                break;
+            }
+            break;
+        }
+      }
+
+      uint32_t time = SDL_GetTicks() - startTime;
+      *(uint32_t*)(memory.data + 64) = time;
+
+      int numKeys;
+      const Uint8* keyState = SDL_GetKeyboardState(&numKeys);
+      uint8_t buttons = 0;
+      for(int i = 0; i < 8; ++i) {
+        if(keyState[uw8buttonScanCodes[i]]) {
+          buttons |= 1 << i;
+        }
+      }
+      memory.data[0x44] = buttons;
+    
+      Z_cartZ_upd(&cartInstance);
+      memcpy(audioState.registers, memory.data + 0x50, 32);
+
+      uint32_t* palette = (uint32_t*)(memory.data + 0x13000);
+      uint8_t* pixels = memory.data + 120;
+      for(uint32_t i = 0; i < 320*240; ++i) {
+        pixels32[i] = palette[pixels[i]];
+      }
+      SDL_UpdateTexture(texture, NULL, pixels32, 320*4);
+      SDL_RenderClear(renderer);
+      SDL_RenderCopy(renderer, texture, NULL, NULL);
+      SDL_RenderPresent(renderer);
+
+      uint32_t frame = (uint32_t)((uint64_t)time * 60 / 1000);
+      uint32_t offset = time - (uint32_t)((uint64_t)frame * 1000 / 60);
+      uint32_t nextFrameTime = (uint32_t)((uint64_t)(frame + 1) * 1000 / 60 + (offset < 4 ? offset : 4));
+      uint32_t delay = startTime + nextFrameTime - SDL_GetTicks();
+      if(delay < 33) {
+        SDL_Delay(delay);
+      }
     }
+    SDL_CloseAudioDevice(audioDevice);
+    wasm_rt_free_memory(&audioState.memory);
+    wasm_rt_free_memory(&memory);
   }
 
   return 0;
