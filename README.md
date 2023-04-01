@@ -1,4 +1,4 @@
-= Uw82c
+# Uw82c
 
 A simple SDL2 shell to run MicroW8 modules compiled to C using `wasm2c`.
 
@@ -8,7 +8,7 @@ Keys:
 * R key: restart
 * Escape key: quit
 
-== How to compile your own modules
+## How to compile your own modules
 
 * unpack the uw8 module to a standard WebAssembly module:
   ```
