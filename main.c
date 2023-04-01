@@ -30,19 +30,50 @@ const uint32_t uw8buttonScanCodes[] = {
   SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_A, SDL_SCANCODE_S
 };
 
+__attribute__((weak)) void Z_cartZ_upd(Z_cart_instance_t* i) {};
+__attribute__((weak)) float Z_cartZ_snd(Z_cart_instance_t* i, uint32_t s) {
+  return Z_envZ_sndGes(i->Z_env_instance, s);
+}
+
+typedef struct AudioState {
+  wasm_rt_memory_t memory;
+  Z_env_instance_t platformInstance;
+  Z_cart_instance_t cartInstance;
+  uint8_t registers[32];
+  uint32_t sampleIndex;
+} AudioState;
+
+void audioCallback(void* userdata, Uint8* stream, int len) {
+  AudioState* pState = (AudioState*)userdata;
+  float* pSamples = (float*)stream;
+  int numSamples = len / sizeof(float);
+  memcpy(pState->memory.data + 0x50, pState->registers, 32);
+  for(int i = 0; i < numSamples; ++i) {
+    *pSamples++ = Z_cartZ_snd(&pState->cartInstance, pState->sampleIndex++);
+  }
+}
+
 int main() {
   wasm_rt_init();
-  wasm_rt_memory_t mainMemory;
-  wasm_rt_allocate_memory(&mainMemory, 4, 4);
+  wasm_rt_memory_t memory;
+  wasm_rt_allocate_memory(&memory, 4, 4);
   Z_env_instance_t platformInstance;
-  platformInstance.Z_envZ_memory = &mainMemory;
+  platformInstance.Z_envZ_memory = &memory;
   Z_env_init_module();
   Z_env_instantiate(&platformInstance, &platformInstance);
   Z_cart_instance_t cartInstance;
   Z_cart_init_module();
   Z_cart_instantiate(&cartInstance, &platformInstance);
 
-  SDL_Init(SDL_INIT_VIDEO);
+  AudioState audioState;
+  wasm_rt_allocate_memory(&audioState.memory, 4, 4);
+  audioState.platformInstance.Z_envZ_memory = &audioState.memory;
+  Z_env_instantiate(&audioState.platformInstance, &audioState.platformInstance);
+  Z_cart_instantiate(&audioState.cartInstance, &audioState.platformInstance);
+  memcpy(audioState.registers, memory.data + 0x50, 32);
+  audioState.sampleIndex = 0;
+
+  SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
   SDL_Window* window;
   SDL_Renderer* renderer;
   SDL_CreateWindowAndRenderer(640, 480, SDL_WINDOW_RESIZABLE, &window, &renderer);
@@ -50,6 +81,16 @@ int main() {
   SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, 320, 240);
 
   uint32_t* pixels32 = malloc(320*240*4);
+
+  SDL_AudioSpec audioSpec;
+  audioSpec.freq = 44100;
+  audioSpec.format = AUDIO_F32SYS;
+  audioSpec.channels = 2;
+  audioSpec.samples = 256;
+  audioSpec.callback = audioCallback;
+  audioSpec.userdata = &audioState;
+  SDL_AudioDeviceID audioDevice = SDL_OpenAudioDevice(NULL, 0, &audioSpec, &audioSpec, 0);
+  SDL_PauseAudioDevice(audioDevice, 0);
 
   uint32_t startTime = SDL_GetTicks();
 
@@ -63,7 +104,7 @@ int main() {
     }
 
     uint32_t time = SDL_GetTicks() - startTime;
-    *(uint32_t*)(mainMemory.data + 64) = time;
+    *(uint32_t*)(memory.data + 64) = time;
 
     int numKeys;
     const Uint8* keyState = SDL_GetKeyboardState(&numKeys);
@@ -73,12 +114,13 @@ int main() {
         buttons |= 1 << i;
       }
     }
-    mainMemory.data[0x44] = buttons;
+    memory.data[0x44] = buttons;
     
     Z_cartZ_upd(&cartInstance);
+    memcpy(audioState.registers, memory.data + 0x50, 32);
 
-    uint32_t* palette = (uint32_t*)(mainMemory.data + 0x13000);
-    uint8_t* pixels = mainMemory.data + 120;
+    uint32_t* palette = (uint32_t*)(memory.data + 0x13000);
+    uint8_t* pixels = memory.data + 120;
     for(uint32_t i = 0; i < 320*240; ++i) {
       pixels32[i] = palette[pixels[i]];
     }
